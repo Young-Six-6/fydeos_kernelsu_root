@@ -11,7 +11,7 @@ import re
 import sys
 import os
 
-SCRIPTS = ["build.sh", "deploy.sh", "verify.sh", "fixes/arc-boot-continue-wait.sh", "fixes/install-arc-race-fix.sh"]
+SCRIPTS = ["build.sh", "deploy.sh", "verify.sh", "fixes/arc-boot-continue-wait.sh", "fixes/install-arc-race-fix.sh", "fixes/install-metadata-fix.sh"]
 # scripts live one level above tools/
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

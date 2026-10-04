@@ -46,16 +46,19 @@ fydeos-ksu/
 ├── config-official-iris.txt     官方 iris 的配置
 ├── config-official-apu.txt      官方 apu 的配置
 ├── tools/
-│   └── inspect-artifact.py      离线核验脚本
+│   ├── inspect-artifact.py      离线核验脚本
+│   ├── config-diff.py           配置 vs 官方差异统计
+│   └── check-links.py           文档链接自检
 ├── fixes/                       补丁
-│   ├── install-arc-race-fix.sh  安装 / 查看状态 / 卸载
+│   ├── install-arc-race-fix.sh  子系统启动竞态修复 / 安装 / 卸载
+│   ├── install-metadata-fix.sh  【已过时】旧内核的 /metadata 变通
 │   └── arc-boot-continue-wait.sh 包装脚本本体
 ├── iris/
-│   ├── vmlinuz.A                    12,878,848 B
-│   └── modules-iris.tar.gz          33,369,354 B
+│   ├── vmlinuz.A                    13,456,384 B
+│   └── modules-iris.tar.gz          33,369,701 B
 └── apu/
-    ├── vmlinuz.A                    14,529,536 B
-    └── modules-apu.tar.gz           41,601,209 B
+    ├── vmlinuz.A                    15,102,976 B
+    └── modules-apu.tar.gz           41,597,536 B
 ```
 
 ### 2.2 校验值
@@ -64,15 +67,15 @@ fydeos-ksu/
 
 | 文件 | 大小 (B) | md5 | sha256 |
 |---|---|---|---|
-| `iris/vmlinuz.A` | 12,878,848 | `c8c6b467819fc2272667f3a77ac62b67` | `cf08bd763b7b6d35ad5baa5962261fe4a76f74c21b1adb7f82a880477bf8883d` |
-| `iris/modules-iris.tar.gz` | 33,369,354 | `c2af400294fdd51122a7e1ffd83d0797` | `3d9afe50b56c75d446477c288585b5a54728181f594a18613517e2ff1ed7e1ac` |
+| `iris/vmlinuz.A` | 13,456,384 | `7349572f53dd3c9f7b852a29816fb1dc` | `8a012544dc788c88ad813f1c8d397de75ba4ec8558653a9674b15b65226db014` |
+| `iris/modules-iris.tar.gz` | 33,369,701 | `f4a6760dc29f5aeb00eedeeb3c959e98` | `d5a1f912ea6760041c88db87da415a896a0510df692a2eb75e4aa5d0d7c4456f` |
 
 **apu（AMD 显卡）**
 
 | 文件 | 大小 (B) | md5 | sha256 |
 |---|---|---|---|
-| `apu/vmlinuz.A` | 14,529,536 | `4bcab93f3f763dabedd4eb662fe6fccf` | `d764d9059e2f122f8e245755adde1d5135d5a29ee5aba8c2bb55174e845d8446` |
-| `apu/modules-apu.tar.gz` | 41,601,209 | `f24faeab0fe86cab5aedcd5086b27e63` | `21a684285de0d4b923b366ada5568a8c6f71d53d24995e881b3bf85cd0d2321a` |
+| `apu/vmlinuz.A` | 15,102,976 | `9ea04b3dce1de20feb0754fd962dc629` | `35615c4a0b8ea4c087ef3f1333b00e7e3520a426bc25b0bb5be76c217a8dba71` |
+| `apu/modules-apu.tar.gz` | 41,597,536 | `a24ab5afa75555adec4e73d03e10e91e` | `d687ee0325d84a2c5bc460765cc9215b2b3b3521a0a9e809d41621a2890b85f0` |
 
 ### 2.3 校验
 
@@ -234,8 +237,19 @@ sudo bash verify.sh iris      # 或 apu
 
 ```bash
 uname -r                                  # 6.12.54-01180-gb4e10020ba49-dirty
-dmesg | grep -c 'Invalid relocation'      #应该是 0   
+dmesg | grep -c 'Invalid relocation'      # 应该是 0
 dmesg | grep -c 'Unknown symbol'          # 0
+```
+
+### 5.2.1 确认 ARC 适配
+
+`verify.sh` 的第 4b 节会检查这四项，手动核对如下：
+
+```bash
+sudo dmesg | grep -c 'blocked syscall 169'          # 0
+sudo dmesg | grep -o "direct-hook table='[a-z_]*'"  # 'android'
+sudo dmesg | grep 'read init.rc'                    # 有输出
+grep -cw static_calls_table /proc/kallsyms          # 1
 ```
 
 ### 5.3 确认 KernelSU 
@@ -380,7 +394,26 @@ sudo dmesg | grep -E 'Crowning manager|open ksud'
 sudo bash verify.sh iris
 ```
 
-### 7.3 错误示范 
+### 7.3 推荐模块（未经推荐的版本可能有问题）
+
+| 模块 | 版本 | 作用 |
+|---|---|---|
+| ZygiskNext | `1.5.0 (843-5217106-release)` | 提供 Zygisk 实现 |
+| LSPosed | **`v1.9.2 (7024)`** | Xposed 框架 |
+
+> **LSPosed 不要用 2.0.x**  会闪退
+
+装完之后的状态：
+
+```bash
+IPID=$(pgrep -f '^/system/bin/init' | head -1)
+sudo nsenter -t $IPID -m -p -U --root -- ps -A | grep -aiE 'lspd|zygiskd|lsposed'
+```
+
+应看到 `lspd`、`zygiskd64-zygisk_lsposed`、`zygiskd32-zygisk_lsposed`、
+`org.lsposed.manager` 四类进程。
+
+### 7.4 错误示范 
 
 | 不要做 | 后果 |
 |---|---|
@@ -401,9 +434,9 @@ sudo bash verify.sh iris
 | 症状 | 表现 |
 |---|---|
 | **A. 子系统卡启动页** | 卡在启动页；`zygote` / `system_server` 不存在 |
-| **B. 装什么 APK 都失败** | 「解析安装包失败」/ `InstallStaging: EACCES` |
+| **B. 装任意 APK 都失败** | 「解析安装包失败」/ `InstallStaging: EACCES` |
 
-**判别**（排除内核问题）：
+排除内核问题：
 
 ```bash
 uname -v                                                  # 应是我们构建的日期
@@ -432,7 +465,7 @@ host 的 upstart job `arc-boot-continue` 会在容器 init 的 property service
 2. `arc_setup.cc:2556`（`initctl start arc-sdcard`）不会执行
    导致 `external_primary` 卷不存在 进而 MediaProvider 拒绝打开任何 APK
 
-此问题理论上原版内核也存在，但是我们的内核增加更多内容，大幅提高触发概率
+此问题理论上原版内核也存在，但是此内核增加更多内容，大幅提高触发概率
 
 ### 8.3 修法
 
@@ -467,13 +500,17 @@ sudo bash install-arc-race-fix.sh --uninstall  # 卸载（恢复原始 conf）
 
 ```bash
 {
-  echo "===== 内核 ====="
-  uname -r; uname -v
-  sed -n 's/.*BOOT_IMAGE=\([^ ]*\).*/\1/p' /proc/cmdline
+  echo "===== KernelSU 内核侧 ====="
   echo "Invalid relocation: $(sudo dmesg | grep -c 'Invalid relocation')"
   echo "Unknown symbol: $(sudo dmesg | grep -c 'Unknown symbol')"
   echo "KernelSU lines: $(sudo dmesg | grep -c KernelSU)"
   sudo dmesg | grep -E 'dispatcher installed|Crowning manager|open ksud' | tail -5
+
+  echo "===== ARC 适配（决定模块能否激活）====="
+  echo "blocked syscall 169: $(sudo dmesg | grep -c 'blocked syscall 169')   # 应为 0"
+  sudo dmesg | grep -o "direct-hook table='[a-z_]*'" | head -1              # 应为 'android'
+  sudo dmesg | grep 'read init.rc' | head -1                                # 有输出才对
+  echo "static_calls_table: $(grep -cw static_calls_table /proc/kallsyms)"  # 应为 1
 
   echo "===== 模块 ====="
   find /lib/modules/6.12.54-01180-gb4e10020ba49-dirty -name '*.ko' | wc -l
@@ -481,6 +518,7 @@ sudo bash install-arc-race-fix.sh --uninstall  # 卸载（恢复原始 conf）
 
   echo "===== ESP ====="
   lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT | head -25
+  sudo losetup -nO NAME,BACK-FILE 2>/dev/null | head -5      # 双引导：引导槽在 loop 里
 
   echo "===== Android 容器 ====="
   IPID=$(pgrep -f '^/system/bin/init' | head -1)
@@ -491,13 +529,55 @@ sudo bash install-arc-race-fix.sh --uninstall  # 卸载（恢复原始 conf）
   echo "esdfs mounts: $(mount | grep -c esdfs)"
   sudo nsenter -t $IPID -m -p -U --root -- ls /storage/emulated/0/ | head
 
+  echo "===== ksud 活动（模块是否在开机时激活）====="
+  sudo nsenter -t $IPID -m -p -U --root -- sh -c '
+    L=/data/adb/ksu/log/logcat.log
+    echo "PostFsData: $(grep -ac "command: PostFsData" $L)"
+    echo "UAPI 错误: $(grep -ac "UAPI version mismatch" $L)   # 应为 0"
+    ls /data/adb/modules_update/ 2>/dev/null | wc -l
+    ls /data/adb/modules/ 2>/dev/null'
+
   echo "===== 补丁状态 ====="
-  sudo bash fixes/install-arc-race-fix.sh --status 2>/dev/null || echo "补丁未安装"
+  sudo bash fixes/install-arc-race-fix.sh --status 2>/dev/null || echo "子系统竞态补丁未安装"
+  sudo bash fixes/install-metadata-fix.sh --status 2>/dev/null || echo "metadata 变通未安装（新内核不需要）"
 } 2>&1 | tee ~/ksu-diag.txt
 
 echo
 echo "结果已存到 ~/ksu-diag.txt"
 ```
 
+> **两个 `fixes/` 脚本的区别**：`install-arc-race-fix.sh` 修的是**子系统启动竞态**，
+> 现在仍然需要（见第 8 节）；`install-metadata-fix.sh` 是**旧内核时期的变通**，
+> 换新内核后应当用 `--uninstall` 撤掉（见 [10.2](#102-模块一直等待重启重启也不生效)）。
+
 ---
 
+## 10. 模块问题
+
+### 10.1  `UAPI version mismatch: kernel=0, ksud=2`
+
+同下
+
+### 10.2 模块一直等待重启，即使已经重启
+
+适用于：检查：`ksud module list`返回 `"update": "true"`，且 `/data/adb/modules_update/` 里还有内容。
+
+**修复：新内核已修复**，无需额外操作。
+
+### 10.3 ZygiskNext 报错
+
+**修复：新内核已修复**，无需额外操作。
+
+---
+
+### 10.4 Zygisk 模块
+
+请安装ZygiskNext
+
+####  LSPosed 2.0.x 闪退
+
+兼容问题，**无法修复**。
+
+1.9.2 不受影响。
+
+---

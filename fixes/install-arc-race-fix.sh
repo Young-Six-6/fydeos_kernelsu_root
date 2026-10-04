@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# install-arc-race-fix.sh —— 修复 ARC 启动竞态（/data 未挂载 + 安装 APK 失败）
+# 修复 ARC 启动竞态导致的 /data 未挂载和 APK 安装失败。
 #
-#   sudo bash install-arc-race-fix.sh            # 安装（幂等）
-#   sudo bash install-arc-race-fix.sh --status   # 只看状态
+#   sudo bash install-arc-race-fix.sh            # 安装
+#   sudo bash install-arc-race-fix.sh --status   # 查看状态
 #   sudo bash install-arc-race-fix.sh --uninstall
 #
 # 修复 arc-boot-continue 早于容器 property service 就绪时引发的启动竞态。

@@ -35,7 +35,7 @@ VARIANTS = {
         "dir": "iris",
         "kernel": "iris/vmlinuz.A",
         "modules": "iris/modules-iris.tar.gz",
-        "md5": "c8c6b467819fc2272667f3a77ac62b67",
+        "md5": "7349572f53dd3c9f7b852a29816fb1dc",
         # NOTE: amdgpu lives under drm/amd/amdgpu/, not drm/amdgpu/
         "gpu": ["i915/i915", "amd/amdgpu/amdgpu"],
     },
@@ -43,7 +43,7 @@ VARIANTS = {
         "dir": "apu",
         "kernel": "apu/vmlinuz.A",
         "modules": "apu/modules-apu.tar.gz",
-        "md5": "4bcab93f3f763dabedd4eb662fe6fccf",
+        "md5": "9ea04b3dce1de20feb0754fd962dc629",
         "gpu": ["amd/amdgpu/amdgpu", "radeon/radeon"],
     },
 }

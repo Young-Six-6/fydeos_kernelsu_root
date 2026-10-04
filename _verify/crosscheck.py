@@ -110,10 +110,10 @@ print("文档与产物一致性交叉核对")
 print("=" * 78)
 
 for tag, ksize, msize, kmd5, nmd5 in (
-        ("iris", 12878848, 33369354, "c8c6b467819fc2272667f3a77ac62b67",
-         "c2af400294fdd51122a7e1ffd83d0797"),
-        ("apu", 14529536, 41601209, "4bcab93f3f763dabedd4eb662fe6fccf",
-         "f24faeab0fe86cab5aedcd5086b27e63")):
+        ("iris", 13456384, 33369701, "7349572f53dd3c9f7b852a29816fb1dc",
+         "f4a6760dc29f5aeb00eedeeb3c959e98"),
+        ("apu", 15102976, 41597536, "9ea04b3dce1de20feb0754fd962dc629",
+         "a24ab5afa75555adec4e73d03e10e91e")):
     print()
     print("--- %s ---" % tag)
     kp = os.path.join(BASE, tag, "vmlinuz.A")
@@ -205,9 +205,11 @@ manual = open(os.path.join(BASE, "USER-MANUAL.md"), encoding="utf-8").read()
 fid = open(os.path.join(BASE, "FIDELITY.md"), encoding="utf-8").read()
 build = open(os.path.join(BASE, "BUILD.md"), encoding="utf-8").read()
 
-for doc, name in ((readme, "README"), (manual, "USER-MANUAL"), (fid, "FIDELITY")):
-    chk_in("%s: 含 iris md5" % name, "c8c6b467819fc2272667f3a77ac62b67", doc)
-    chk_in("%s: 含 apu md5" % name, "4bcab93f3f763dabedd4eb662fe6fccf", doc)
+# FIDELITY.md 已收敛为「与官方的差异」专题，不再承载校验值/版本串
+#（那些在 README.md、MD5SUMS、USER-MANUAL.md 里，仍被下面断言覆盖）。
+for doc, name in ((readme, "README"), (manual, "USER-MANUAL")):
+    chk_in("%s: 含 iris md5" % name, "7349572f53dd3c9f7b852a29816fb1dc", doc)
+    chk_in("%s: 含 apu md5" % name, "9ea04b3dce1de20feb0754fd962dc629", doc)
     chk_in("%s: 含版本串" % name, V, doc)
 
 chk_in("BUILD: 提到 EFI_STUB", "EFI_STUB", build)

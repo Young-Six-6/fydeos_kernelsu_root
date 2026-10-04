@@ -2,6 +2,8 @@
 
 本指南说明如何从固定版本的 ChromiumOS 内核源码构建 FydeOS `iris` 与 `apu` 变体，并生成可部署的内核和模块包。
 
+未另行说明时，命令从仓库根目录执行。
+
 ## 1. 构建目标
 
 | 项目 | 配置 |
@@ -43,15 +45,14 @@ sudo apt-get install -y \
 
 ### 2.3 LLVM/Clang
 
-本项目使用 Android Clang r536225（Clang 19.0.1）。默认路径为 `/opt/ddk/clang/clang-r536225/bin`；其他安装位置可通过 `CLANG_DIR` 指定。
+本项目使用 Android Clang r536225，版本为 19.0.1。默认路径为 `/opt/ddk/clang/clang-r536225/bin`；其他安装位置可通过 `CLANG_DIR` 指定。
 
 ```bash
 sudo mkdir -p /opt/ddk/clang
-cd /opt/ddk/clang
-sudo curl -fL -o clang-r536225.tar.gz \
+sudo curl -fL -o /opt/ddk/clang/clang-r536225.tar.gz \
   'https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz'
-sudo mkdir -p clang-r536225
-sudo tar xzf clang-r536225.tar.gz -C clang-r536225
+sudo mkdir -p /opt/ddk/clang/clang-r536225
+sudo tar xzf /opt/ddk/clang/clang-r536225.tar.gz -C /opt/ddk/clang/clang-r536225
 /opt/ddk/clang/clang-r536225/bin/clang --version
 ```
 
@@ -62,6 +63,7 @@ sudo tar xzf clang-r536225.tar.gz -C clang-r536225
 ### 2.4 工作目录
 
 ```bash
+export REPO="$PWD"
 export W="$HOME/ksu-build"
 export CLANG_DIR=/opt/ddk/clang/clang-r536225/bin
 mkdir -p "$W"
@@ -86,8 +88,9 @@ cp config-official-apu.txt "$W/official-apu.config"
 如需从设备获取配置，可在对应官方系统中运行：
 
 ```bash
+VARIANT=iris
 sudo modprobe configs
-zcat /proc/config.gz > official-<variant>.config
+zcat /proc/config.gz > "official-$VARIANT.config"
 ```
 
 也可从对应官方模块包的 `kernel/kernel/configs.ko` 提取配置。应使用完整配置作为基线；不要用 ChromiumOS 配置片段自行合并替代。
@@ -125,7 +128,7 @@ bash build.sh iris --workdir "$W" --jobs 12 --stage prepare
 | `065-add-esdfs.patch` | `r144-dev` / `chromeos-kernel-6_6` | esdfs |
 | `040-add-ashmem.patch` | `r132-dev` / `chromeos-kernel-6_1` | ashmem |
 
-这些补丁不是针对 6.12 发布的。对未应用的 hunk，应检查对应 `.rej` 文件并将改动移植到 6.12 的实际代码位置。完成后确认没有未处理的 reject：
+这些补丁不是针对 6.12 发布的。对未应用的 hunk，检查对应 `.rej` 文件并将改动移植到 6.12 源码。完成后确认没有未处理的 `.rej`：
 
 ```bash
 find "$W/kernel-iris" -name '*.rej' -not -path '*/.git/*'
@@ -182,7 +185,7 @@ net/netfilter/Makefile:
 
 `030-fix-amd-suspend-issue` 应同时检查 `iris` 与 `apu`。移植时需保留以下语义：
 
-- `acpi_get_lps0_constraint()` 返回 `ACPI_STATE_UNKNOWN`（数值为 255）时，应视为没有有效约束并返回 `false`；不能只检查负数。
+- `acpi_get_lps0_constraint()` 返回值为 255，即 `ACPI_STATE_UNKNOWN` 时，应视为没有有效约束并返回 `false`；不能只检查负数。
 - 有效约束应与 `ACPI_STATE_D3_HOT` 比较。
 - `pci_bridge_d3_possible()` 应使用平台约束检查替代 BIOS 年份启发式，不应保留旧 fallback。
 
@@ -228,6 +231,59 @@ EXPORT_SYMBOL_GPL(ksu_get_pristine_sys_call_table);
 
 将用于安装 hook 的表指针与用于调用原始系统调用的 pristine 表指针分开。`ksu_syscall_table` 用于写入 hook；`ksu_call_orig_syscall()` 应通过 `ksu_get_pristine_sys_call_table()` 获得的表调用原始系统调用，并在表或系统调用号无效时返回 `-ENOSYS`。更新 `feature/sucompat.c`、`hook/syscall_event_bridge.c` 和 `hook/x86_64/syscall_hook.c` 中调用原始系统调用的代码。
 
+#### 直接表 hook
+
+ARC 配置 `/opt/google/containers/android/config.json` 使用 `"altSyscall": "android"`。在 `KernelSU/kernel/hook/x86_64/syscall_hook.c` 中，`read`、`fstat` 的直接表 hook 应优先选择 `android`，未找到时再回退到 `android_permissive`。合并两个名称后取首个匹配项可能误选表，导致 init.rc 注入失败。
+
+```c
+list_for_each(pos, head) {
+    t = list_entry(pos, struct alt_sys_call_table, node);
+    if (!strcmp(t->name, "android")) {
+        pick = t;
+        break;
+    }
+}
+if (!pick) {
+    list_for_each(pos, head) {
+        t = list_entry(pos, struct alt_sys_call_table, node);
+        if (!strcmp(t->name, "android_permissive")) {
+            pick = t;
+            break;
+        }
+    }
+}
+```
+
+设备端检查表选择及 init.rc 读取日志：
+
+```bash
+sudo dmesg | grep 'direct-hook table'
+sudo dmesg | grep 'read init.rc'
+```
+
+表名称应为 `android`。未出现读取日志时，结合 ARC 启动状态及日志保留情况继续排查；dispatcher 槽位和读取计数以当前构建为准。
+
+#### reboot 白名单
+
+ksud 通过 `reboot` 系统调用传递 KernelSU 魔数以获取内核 fd。ARC 的 alt-syscall 白名单若阻断该调用，内核 kprobe 无法收到请求，ksud 可能报告 `UAPI version mismatch: kernel=0, ksud=2`。
+
+在 `security/chromiumos/android_whitelists.h` 的 `android_whitelist[]` 中加入：
+
+```c
+    SYSCALL_ENTRY(reboot),
+```
+
+设备端检查是否仍有拦截记录，并结合 ksud 的 UAPI 查询确认调用成功：
+
+```bash
+sudo dmesg | grep 'blocked syscall 169'
+```
+
+放行 `reboot` 不等于让容器进程能重启机器：`reboot(2)` 内部仍检查
+`capable(CAP_SYS_BOOT)`，而该检查针对 **init user namespace**；容器 uid 0
+在宿主侧是 655360，在 init userns 里没有这个能力，会被 `EPERM` 挡掉。
+`android_permissive` 表原本就放行它，所以这里只是把 `android` 表对齐到相同行为。
+
 #### 用户命名空间 UID
 
 在 `KernelSU/kernel/include/ksu_uid.h` 增加命名空间感知的 UID 转换，并将 KernelSU 中直接使用 `current_uid().val` 的用户身份检查改为调用此 helper：
@@ -271,7 +327,21 @@ bash build.sh iris --workdir "$W" --jobs 12 --stage config
 -01180-gb4e10020ba49-dirty
 ```
 
-配置阶段会检查关键符号和 `kernelrelease`。继续前确认版本串为 `6.12.54-01180-gb4e10020ba49-dirty`，并查看生成的 `.config`。与官方配置的已知差异和影响见 [FIDELITY.md](FIDELITY.md)；不要假设差异仅限 KernelSU 与编译器字段。
+配置阶段还会启用 `CONFIG_KALLSYMS` 和 `CONFIG_KALLSYMS_ALL`，为 KernelSU 的 LSM hook 提供 `static_calls_table`、`lsm_active_cnt` 等数据符号。确认生成的配置包含：
+
+```bash
+grep -E '^CONFIG_KALLSYMS(_ALL)?=' "$W/kernel-iris/.config"
+```
+
+设备端可通过 `/proc/kallsyms` 核对数据符号：
+
+```bash
+grep -wE 'static_calls_table|lsm_active_cnt' /proc/kallsyms
+```
+
+`selinux_hide: sel_handle_status_ops not found` 表示相关 hook 未生效。`tracked hooks=0` 是初始化时的计数；模块 `mount` 字段的含义见 [用户手册](USER-MANUAL.md)第 10.2 节。
+
+配置阶段会检查关键符号和 `kernelrelease`。继续前确认版本串为 `6.12.54-01180-gb4e10020ba49-dirty`，并查看生成的 `.config`。与官方配置的已知差异和影响见 [FIDELITY.md](FIDELITY.md)。
 
 ### 4.7 编译内核并安装模块到暂存目录
 
@@ -279,7 +349,7 @@ bash build.sh iris --workdir "$W" --jobs 12 --stage config
 bash build.sh iris --workdir "$W" --jobs 12 --stage build
 ```
 
-此阶段会清理源码树中的旧 `.ko`，执行一次 `make` 构建内核和模块，检查 EFI stub、必需模块及 `vermagic`，再将模块安装到独立输出目录。不要只运行 `make bzImage` 后安装模块；这会留下未随配置更新的模块。
+此阶段会清理源码树中的旧 `.ko`，执行一次 `make` 构建内核和模块，检查 EFI stub 和必需模块，显示 `vermagic`，再将模块安装到独立输出目录。不要只运行 `make bzImage` 后安装模块；这会留下未随配置更新的模块。
 
 默认模块输出目录为：
 
@@ -352,6 +422,7 @@ modinfo -F vermagic "$W/modout-iris/lib/modules/6.12.54-01180-gb4e10020ba49-dirt
 确认 `vmlinuz.A` 是带 EFI stub 的 x86 bzImage，且 KernelSU、ashmem、esdfs、alt-syscall 与 xt_quota2 的关键标记存在。构建脚本会执行启动头和模块检查；项目中的 `tools/inspect-artifact.py` 可用于核验放在仓库 `iris/`、`apu/` 目录下的已交付产物：
 
 ```bash
+cd "$REPO"
 python3 tools/inspect-artifact.py iris
 python3 tools/inspect-artifact.py apu
 ```
@@ -360,17 +431,52 @@ python3 tools/inspect-artifact.py apu
 
 ### 5.3 配置与官方差异
 
-从官方镜像提取完整配置与内核模块清单后，按 [FIDELITY.md](FIDELITY.md) 核对已知差异。配置差异包括 KernelSU 依赖、工具链元数据以及部分平台选项；模块包也可能包含“内建与模块归属不同”或适用平台不同的差异。
+按 [FIDELITY.md](FIDELITY.md) 核对配置和模块差异，包括 KernelSU 依赖、工具链元数据、平台选项及模块归属。
+
+### 5.4 与上一版产物对比
+
+保留上一版输出，并将下列路径设置为待比较的目录：
+
+```bash
+OLD_DIST="$W/dist-iris-old"
+NEW_DIST="$W/dist-iris"
+T=$(mktemp -d)
+mkdir -p "$T/old" "$T/new"
+
+"$W/kernel-iris/scripts/extract-vmlinux" "$OLD_DIST/vmlinuz.A" > "$T/old/vmlinux"
+"$W/kernel-iris/scripts/extract-vmlinux" "$NEW_DIST/vmlinuz.A" > "$T/new/vmlinux"
+for side in old new; do
+  readelf -SW "$T/$side/vmlinux" |
+    sed -n 's/^ *\[ *[0-9]\+\] *//p' |
+    awk '{print $1, $5}' | sort > "$T/$side/sections.txt"
+done
+diff -u "$T/old/sections.txt" "$T/new/sections.txt"
+
+tar -xzf "$OLD_DIST/modules-iris.tar.gz" -C "$T/old"
+tar -xzf "$NEW_DIST/modules-iris.tar.gz" -C "$T/new"
+diff -qr "$T/old/lib/modules" "$T/new/lib/modules"
+printf '对比文件目录：%s\n' "$T"
+```
+
+节区名称与大小用于检查产物结构，模块目录对比用于识别内容及文件清单变化。`configs.ko` 内嵌构建配置，配置变化会影响该模块。其他差异应结合源码、配置和工具链改动逐项确认；模块字节相同不能单独证明 ABI 兼容。符号比较使用构建目录中的 `System.map`。
+
+### 5.5 增量构建
+
+在同一源码树中运行 `make` 会增量编译受影响对象。重新执行第 4.7、4.8 节可生成配套产物；脚本会清理旧模块并重新安装到暂存目录。
+
+仅替换内核时，必须确认配置、工具链和模块接口兼容，并重新生成校验清单。`CONFIG_MODVERSIONS=n` 本身不能证明旧模块可复用。
 
 ## 6. 常见构建问题
 
 | 现象 | 处理方式 |
 |---|---|
 | `kernelrelease` 与目标版本不符 | 设置正确的 `LOCALVERSION`，运行 `olddefconfig` 后重新核对。 |
-| `patch` 生成 `.rej` | 按第 4.2 节将 hunk 移植到 6.12 源码，并确认没有未处理的 reject。 |
+| `patch` 生成 `.rej` | 按第 4.2 节将 hunk 移植到 6.12 源码，并处理所有 `.rej`。 |
 | 两个变体解析到同一 KernelSU 目录 | 分别检查 `drivers/kernelsu` 的真实路径，确保链接指向各自源码树中的副本。 |
 | 模块包缺少图形或网络驱动 | 检查目标变体配置、重新构建模块，并确认打包来自对应的 `modout-<variant>`。 |
 | EFI 启动头检查失败 | 检查 `CONFIG_EFI_STUB`、`CONFIG_EFI_HANDOVER_PROTOCOL` 和生成的 `bzImage`。 |
 | 模块加载出现未知符号或重定位错误 | 确认内核和模块由同一次构建生成，并作为一组部署。 |
+| 克隆占用过多磁盘或耗时过长 | 使用 `--depth 1` 浅克隆。`build.sh` 已采用该选项。 |
+| 模块停留在 `modules_update/` 或报告 UAPI 不匹配 | 按第 4.5 节检查直接表 hook 与 `reboot` 白名单，核对 ARC 启动状态和 ksud 日志。 |
 
 真机部署和启动验证不属于构建步骤，操作方法见 [USER-MANUAL.md](USER-MANUAL.md)。`iris` 与 `apu` 的真机验证状态见 [README.md](README.md)。

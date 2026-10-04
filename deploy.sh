@@ -1,11 +1,12 @@
 #!/bin/bash
 #
-# 部署内核与配套模块（在 FydeOS 终端中以 sudo 运行）。
+# 在 FydeOS 终端中以 sudo 部署内核与配套模块。
+# 更推荐手动copy
 # 用法：
 #     sudo bash deploy.sh iris /path/to/iris/vmlinuz.A /path/to/iris/modules-iris.tar.gz
 #     sudo bash deploy.sh apu  /path/to/apu/vmlinuz.A  /path/to/apu/modules-apu.tar.gz
 #
-# 预检查（不写入）：
+# 预检查：
 #     sudo bash deploy.sh iris <vmlinuz.A> <modules-iris.tar.gz> --dry-run
 #
 # 指定 ESP：
@@ -45,21 +46,21 @@ warn() { echo "  ! $*"; }
 [ -f "$KERNEL_IMG" ] || die "找不到内核文件: $KERNEL_IMG"
 [ -f "$MODULES_TGZ" ] || die "找不到模块包: $MODULES_TGZ"
 
-# 按变体选择预期校验值（与 MD5SUMS、SHA256SUMS 一致）。
+# 按变体选择校验值，与 MD5SUMS、SHA256SUMS 一致。
 case "$VARIANT" in
   iris)
-    WANT_KMD5="c8c6b467819fc2272667f3a77ac62b67"
-    WANT_KSHA="cf08bd763b7b6d35ad5baa5962261fe4a76f74c21b1adb7f82a880477bf8883d"
-    WANT_MMD5="c2af400294fdd51122a7e1ffd83d0797"
-    WANT_MSHA="3d9afe50b56c75d446477c288585b5a54728181f594a18613517e2ff1ed7e1ac"
+    WANT_KMD5="7349572f53dd3c9f7b852a29816fb1dc"
+    WANT_KSHA="8a012544dc788c88ad813f1c8d397de75ba4ec8558653a9674b15b65226db014"
+    WANT_MMD5="f4a6760dc29f5aeb00eedeeb3c959e98"
+    WANT_MSHA="d5a1f912ea6760041c88db87da415a896a0510df692a2eb75e4aa5d0d7c4456f"
     # iris 也包含 amdgpu.ko；Intel 机器必须加载 i915。
     REQ_MODULES="kernel/drivers/gpu/drm/i915/i915.ko"
     ;;
   apu)
-    WANT_KMD5="4bcab93f3f763dabedd4eb662fe6fccf"
-    WANT_KSHA="d764d9059e2f122f8e245755adde1d5135d5a29ee5aba8c2bb55174e845d8446"
-    WANT_MMD5="f24faeab0fe86cab5aedcd5086b27e63"
-    WANT_MSHA="21a684285de0d4b923b366ada5568a8c6f71d53d24995e881b3bf85cd0d2321a"
+    WANT_KMD5="9ea04b3dce1de20feb0754fd962dc629"
+    WANT_KSHA="35615c4a0b8ea4c087ef3f1333b00e7e3520a426bc25b0bb5be76c217a8dba71"
+    WANT_MMD5="a24ab5afa75555adec4e73d03e10e91e"
+    WANT_MSHA="d687ee0325d84a2c5bc460765cc9215b2b3b3521a0a9e809d41621a2890b85f0"
     REQ_MODULES="kernel/drivers/gpu/drm/amd/amdgpu/amdgpu.ko kernel/drivers/gpu/drm/radeon/radeon.ko"
     ;;
 esac
@@ -136,7 +137,7 @@ esp_candidates() {
   # 1. 显式指定
   [ -n "$ESP_WANT" ] && echo "$ESP_WANT"
 
-  # 2. 当前根分区所在磁盘的第 12 分区（FydeOS 的 ESP 固定是 12 号）
+  # 2. 根磁盘的第 12 分区
   local src parent
   src=$(findmnt -n -o SOURCE / 2>/dev/null | head -1)
   if [ -n "$src" ] && [ -b "$src" ]; then
@@ -158,7 +159,7 @@ esp_candidates() {
   echo /dev/mmcblk0p12
   echo /dev/vda12
 
-  # 5. loop 设备（双引导镜像布局）
+  # 5. 双引导镜像的 loop 分区
   ls /dev/loop*p12 2>/dev/null
 }
 
@@ -174,7 +175,7 @@ while IFS= read -r cand; do
   ESP_TRIED="$ESP_TRIED $cand"
 
   mount -o ro "$cand" "$MNT" 2>/dev/null || continue
-  # FydeOS 的 ESP 里一定有 syslinux/ 且至少有一个 vmlinuz 槽
+  # ESP 应包含 syslinux/ 和至少一个 vmlinuz 槽。
   if [ -d "$MNT/syslinux" ] && \
      { [ -f "$MNT/syslinux/vmlinuz.A" ] || [ -f "$MNT/syslinux/vmlinuz.B" ]; }; then
     ESP_DEV="$cand"
@@ -490,7 +491,7 @@ else
   fi
   die "移入 /lib/modules/$VER 失败"
 fi
-# 暂存区还剩 lib/modules 空壳，一并清掉（OLDSTASH 在上一级，不受影响）
+# 清理暂存目录；上一级的 OLDSTASH 保留作备份。
 rm -rf "$STAGE"
 
 INSTALLED=$(find "/lib/modules/$VER" -name '*.ko' | wc -l)
