@@ -1,4 +1,4 @@
-# FydeOS for PC + KernelSU（iris / apu）—— 交付说明
+# FydeOS for PC + KernelSU（iris / apu）
 
 > **FydeOS for PC v23.0-SP1** 内核 `6.12.54-01180-gb4e10020ba49-dirty`
 > 内置 KernelSU
