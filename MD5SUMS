@@ -1,0 +1,9 @@
+c8c6b467819fc2272667f3a77ac62b67  iris/vmlinuz.A
+c2af400294fdd51122a7e1ffd83d0797  iris/modules-iris.tar.gz
+4bcab93f3f763dabedd4eb662fe6fccf  apu/vmlinuz.A
+f24faeab0fe86cab5aedcd5086b27e63  apu/modules-apu.tar.gz
+1a4422ab01316c83ef42709c16acc85c  deploy.sh
+0cb3d45c5c586e052fc7f70487eeff0d  verify.sh
+84e03a74a1538d3a4a8affb517320c22  build.sh
+eea08fbbf1b942749bc9f8bcd1c76f05  fixes/arc-boot-continue-wait.sh
+0892902555d59593669efb4c3c6d38a2  fixes/install-arc-race-fix.sh
