@@ -1,4 +1,4 @@
-# FydeOS for PC + KernelSU
+# FydeOS for PC + KernelSU（iris / apu）
 
 适用于 FydeOS for PC v23.0-SP1，包含 `iris` 与 `apu` 两个变体。内核版本为 `6.12.54-01180-gb4e10020ba49-dirty`，内置 KernelSU。
 
